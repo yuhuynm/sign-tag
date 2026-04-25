@@ -19,6 +19,13 @@ type SignatureAsset = {
   bytes: Uint8Array;
 };
 
+type MockSignature = {
+  id: string;
+  name: string;
+  src: string;
+  mimeType: string;
+};
+
 type PageSize = {
   width: number;
   height: number;
@@ -56,16 +63,40 @@ type Interaction =
     }
   | null;
 
+type DragAnchor = {
+  offsetX: number;
+  offsetY: number;
+};
+
 const MIN_SIGNATURE_RATIO = 0.035;
 const DEFAULT_SIGNATURE_WIDTH_PX = 180;
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const MAX_DOCX_BYTES = 30 * 1024 * 1024;
-const MAX_SIGNATURE_BYTES = 5 * 1024 * 1024;
-const MAX_SIGNATURES = 20;
 const MAX_PAGES = 200;
 const MAX_PLACEMENTS = 300;
 const DEFAULT_WORD_PAGE_SIZE: PageSize = { width: 816, height: 1056 };
+const SIGNATURE_ASPECT_RATIO = 0.42;
 const WORD_PAGE_GAP_PX = 24;
+const MOCK_SIGNATURES: MockSignature[] = [
+  {
+    id: "signature-nguyen-van-a",
+    name: "Nguyen Van A",
+    mimeType: "image/svg+xml",
+    src: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20480%20180'%3E%3Crect%20width='480'%20height='180'%20fill='none'/%3E%3Cpath%20d='M42%20116c42-54%2080-72%20112-54%2029%2017%2015%2055-17%2052-33-3-32-48%204-70%2048-29%20103%2048%2064%2086-22%2022-42%2011-33-12%2013%2029%2051%2040%2092%2028%2026-8%2041-28%2041-28s-9%2040%2018%2039c35-1%2056-54%2056-54'%20fill='none'%20stroke='%230f766e'%20stroke-width='12'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3Ctext%20x='58'%20y='156'%20font-family='Arial,Helvetica,sans-serif'%20font-size='24'%20font-weight='700'%20fill='%23172033'%3ENguyen%20Van%20A%3C/text%3E%3C/svg%3E",
+  },
+  {
+    id: "signature-tran-thi-b",
+    name: "Tran Thi B",
+    mimeType: "image/svg+xml",
+    src: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20480%20180'%3E%3Crect%20width='480'%20height='180'%20fill='none'/%3E%3Cpath%20d='M46%2090c72-56%20121-54%20118-14-3%2037-77%2058-83%2026-6-31%2060-65%20111-27%2046%2034%205%2092-27%2068-22-17%2011-65%2045-51%2025%2010%2016%2054-15%2058-35%204-11-55%2031-50%2036%204%2049%2043%2085%2040%2029-2%2046-22%2062-45'%20fill='none'%20stroke='%231f2937'%20stroke-width='11'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3Ctext%20x='58'%20y='156'%20font-family='Arial,Helvetica,sans-serif'%20font-size='24'%20font-weight='700'%20fill='%23172033'%3ETran%20Thi%20B%3C/text%3E%3C/svg%3E",
+  },
+  {
+    id: "signature-company-seal",
+    name: "Company Authorized",
+    mimeType: "image/svg+xml",
+    src: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20480%20180'%3E%3Crect%20width='480'%20height='180'%20fill='none'/%3E%3Cellipse%20cx='153'%20cy='88'%20rx='102'%20ry='58'%20fill='none'%20stroke='%23b42318'%20stroke-width='9'/%3E%3Cellipse%20cx='153'%20cy='88'%20rx='73'%20ry='36'%20fill='none'%20stroke='%23b42318'%20stroke-width='5'/%3E%3Cpath%20d='M279%20113c24-39%2055-59%2092-47%2024%208%2030%2034%207%2046-21%2011-50-3-43-24%207-22%2050-28%2081%2010'%20fill='none'%20stroke='%23b42318'%20stroke-width='10'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3Ctext%20x='88'%20y='95'%20font-family='Arial,Helvetica,sans-serif'%20font-size='22'%20font-weight='800'%20fill='%23b42318'%3EAPPROVED%3C/text%3E%3Ctext%20x='58'%20y='156'%20font-family='Arial,Helvetica,sans-serif'%20font-size='24'%20font-weight='700'%20fill='%23172033'%3ECompany%20Authorized%3C/text%3E%3C/svg%3E",
+  },
+];
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -84,6 +115,27 @@ function toArrayBuffer(bytes: Uint8Array) {
 
   new Uint8Array(buffer).set(bytes);
   return buffer;
+}
+
+async function svgDataUrlToPngBytes(dataUrl: string) {
+  const image = new Image();
+
+  image.decoding = "async";
+  image.src = dataUrl;
+  await image.decode();
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  canvas.width = image.naturalWidth || 480;
+  canvas.height = image.naturalHeight || 180;
+
+  if (!context) {
+    throw new Error("Unable to render mock signature.");
+  }
+
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvasToPngBytes(canvas);
 }
 
 function isPdf(bytes: Uint8Array) {
@@ -175,29 +227,6 @@ async function getDocxMetadata(bytes: Uint8Array): Promise<DocxMetadata> {
   } catch {
     return { pageCount: null, pageSize: null };
   }
-}
-
-function getImageMimeType(bytes: Uint8Array) {
-  const isPng =
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47 &&
-    bytes[4] === 0x0d &&
-    bytes[5] === 0x0a &&
-    bytes[6] === 0x1a &&
-    bytes[7] === 0x0a;
-  const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-
-  if (isPng) {
-    return "image/png";
-  }
-
-  if (isJpeg) {
-    return "image/jpeg";
-  }
-
-  return null;
 }
 
 function sanitizeDownloadName(name: string) {
@@ -491,6 +520,59 @@ function expandWordPageRects(
   return nextRects;
 }
 
+function getDefaultSignatureSize(pageWidth: number) {
+  const width = Math.min(0.34, DEFAULT_SIGNATURE_WIDTH_PX / pageWidth);
+
+  return {
+    height: width * SIGNATURE_ASPECT_RATIO,
+    width,
+  };
+}
+
+function getDragAnchor(event: React.DragEvent) {
+  const rawValue = event.dataTransfer.getData("application/pdf-sign-tag-anchor");
+
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as DragAnchor;
+
+    return typeof parsed.offsetX === "number" &&
+      typeof parsed.offsetY === "number"
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function setSignatureDragImage({
+  event,
+  signature,
+}: {
+  event: React.DragEvent<HTMLElement>;
+  signature: SignatureAsset;
+}) {
+  const dragImage = document.createElement("div");
+  const image = document.createElement("img");
+  const offsetX = DEFAULT_SIGNATURE_WIDTH_PX / 2;
+  const offsetY = (DEFAULT_SIGNATURE_WIDTH_PX * SIGNATURE_ASPECT_RATIO) / 2;
+
+  image.src = signature.src;
+  image.alt = "";
+  dragImage.className = "signature-drag-preview";
+  dragImage.append(image);
+  document.body.append(dragImage);
+  event.dataTransfer.setDragImage(dragImage, offsetX, offsetY);
+  event.dataTransfer.setData(
+    "application/pdf-sign-tag-anchor",
+    JSON.stringify({ offsetX, offsetY } satisfies DragAnchor),
+  );
+  window.requestAnimationFrame(() => dragImage.remove());
+}
+
 export default function PdfSignatureEditor() {
   const [mode, setMode] = useState<EditorMode>("edit");
   const [zoom, setZoom] = useState(1);
@@ -538,6 +620,34 @@ export default function PdfSignatureEditor() {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+
+    Promise.all(
+      MOCK_SIGNATURES.map(async (signature) => ({
+        id: signature.id,
+        name: signature.name,
+        src: signature.src,
+        mimeType: "image/png",
+        bytes: await svgDataUrlToPngBytes(signature.src),
+      })),
+    )
+      .then((mockSignatures) => {
+        if (mounted) {
+          setSignatures(mockSignatures);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setStatus("Unable to load mock signatures.");
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     pageSizesRef.current = pageSizes;
   }, [pageSizes]);
 
@@ -551,9 +661,6 @@ export default function PdfSignatureEditor() {
 
   useEffect(
     () => () => {
-      signaturesRef.current.forEach((signature) =>
-        URL.revokeObjectURL(signature.src),
-      );
       pdfDocumentRef.current?.destroy().catch(() => undefined);
     },
     [],
@@ -672,59 +779,6 @@ export default function PdfSignatureEditor() {
     }
   };
 
-  const handleSignatureUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const files = Array.from(event.target.files ?? []);
-
-    if (files.length === 0) {
-      return;
-    }
-
-    const remainingSlots = MAX_SIGNATURES - signatures.length;
-
-    if (remainingSlots <= 0) {
-      setStatus(`Signature limit reached: maximum ${MAX_SIGNATURES}.`);
-      event.target.value = "";
-      return;
-    }
-
-    const acceptedFiles = files.slice(0, remainingSlots);
-    const nextSignatures: SignatureAsset[] = [];
-    let rejectedCount = files.length - acceptedFiles.length;
-
-    for (const file of acceptedFiles) {
-      if (file.size > MAX_SIGNATURE_BYTES) {
-        rejectedCount += 1;
-        continue;
-      }
-
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const mimeType = getImageMimeType(bytes);
-
-      if (!mimeType) {
-        rejectedCount += 1;
-        continue;
-      }
-
-      nextSignatures.push({
-        id: makeId("signature"),
-        name: file.name,
-        src: URL.createObjectURL(new Blob([toArrayBuffer(bytes)], { type: mimeType })),
-        mimeType,
-        bytes,
-      });
-    }
-
-    setSignatures((current) => [...current, ...nextSignatures]);
-    setStatus(
-      `${nextSignatures.length} signature image(s) added${
-        rejectedCount > 0 ? `, ${rejectedCount} rejected` : ""
-      }.`,
-    );
-    event.target.value = "";
-  };
-
   const updatePageSize = useCallback((pageIndex: number, size: PageSize) => {
     setPageSizes((current) => {
       const next = [...current];
@@ -761,11 +815,8 @@ export default function PdfSignatureEditor() {
       return;
     }
 
-    const defaultWidth = Math.min(
-      0.34,
-      DEFAULT_SIGNATURE_WIDTH_PX / (pageSize.width * zoom),
-    );
-    const defaultHeight = defaultWidth * 0.42;
+    const { width: defaultWidth, height: defaultHeight } =
+      getDefaultSignatureSize(pageSize.width * zoom);
     const x = clamp(pointX / (pageSize.width * zoom), 0, 1 - defaultWidth);
     const y = clamp(pointY / (pageSize.height * zoom), 0, 1 - defaultHeight);
     const placement: Placement = {
@@ -802,8 +853,8 @@ export default function PdfSignatureEditor() {
     addPlacement(
       signatureId,
       pageIndex,
-      event.clientX - bounds.left,
-      event.clientY - bounds.top,
+      event.clientX - bounds.left - (getDragAnchor(event)?.offsetX ?? 0),
+      event.clientY - bounds.top - (getDragAnchor(event)?.offsetY ?? 0),
     );
   };
 
@@ -830,20 +881,21 @@ export default function PdfSignatureEditor() {
       return;
     }
 
+    const anchor = getDragAnchor(event);
     const bounds = event.currentTarget.getBoundingClientRect();
-    const defaultWidth = Math.min(0.34, DEFAULT_SIGNATURE_WIDTH_PX / bounds.width);
-    const defaultHeight = defaultWidth * 0.42;
+    const { width: defaultWidth, height: defaultHeight } =
+      getDefaultSignatureSize(bounds.width);
     const placement: Placement = {
       id: makeId("placement"),
       signatureId,
       pageIndex,
       x: clamp(
-        (event.clientX - bounds.left) / bounds.width,
+        (event.clientX - bounds.left - (anchor?.offsetX ?? 0)) / bounds.width,
         0,
         1 - defaultWidth,
       ),
       y: clamp(
-        (event.clientY - bounds.top) / bounds.height,
+        (event.clientY - bounds.top - (anchor?.offsetY ?? 0)) / bounds.height,
         0,
         1 - defaultHeight,
       ),
@@ -1332,15 +1384,6 @@ export default function PdfSignatureEditor() {
             />
             PDF / DOCX
           </label>
-          <label className="file-control">
-            <input
-              accept="image/png,image/jpeg"
-              multiple
-              type="file"
-              onChange={handleSignatureUpload}
-            />
-            Signatures
-          </label>
           <div className="segmented-control" aria-label="Editor mode">
             <button
               aria-pressed={mode === "edit"}
@@ -1419,7 +1462,7 @@ export default function PdfSignatureEditor() {
 
           <div className="signature-list">
             {signatures.length === 0 ? (
-              <p className="empty-copy">Upload PNG or JPG signatures.</p>
+              <p className="empty-copy">Loading signatures.</p>
             ) : (
               signatures.map((signature) => (
                 <button
@@ -1432,6 +1475,7 @@ export default function PdfSignatureEditor() {
                       signature.id,
                     );
                     event.dataTransfer.effectAllowed = "copy";
+                    setSignatureDragImage({ event, signature });
                   }}
                   type="button"
                 >
@@ -1484,8 +1528,7 @@ export default function PdfSignatureEditor() {
             <div className="drop-empty-state">
               <h2>Open a PDF or Word file to start placing signatures</h2>
               <p>
-                Upload a PDF or DOCX, add signature images, then drag a
-                signature onto any page.
+                Upload a PDF or DOCX, then drag a signature onto any page.
               </p>
             </div>
           ) : documentType === "pdf" && pdfDocument ? (

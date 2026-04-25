@@ -288,6 +288,27 @@ button:disabled {
   white-space: nowrap;
 }
 
+.signature-drag-preview {
+  background: rgb(255 255 255 / 0.92);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px rgb(15 118 110 / 0.18);
+  height: 76px;
+  left: -1000px;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  top: -1000px;
+  width: 180px;
+  z-index: 9999;
+}
+
+.signature-drag-preview img {
+  height: 50%;
+  object-fit: contain;
+  width: 50%;
+}
+
 .inspector {
   border-top: 1px solid var(--line);
   display: grid;
