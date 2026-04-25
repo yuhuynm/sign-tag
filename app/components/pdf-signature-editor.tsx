@@ -210,6 +210,143 @@ function sanitizeDownloadName(name: string) {
   );
 }
 
+function downloadBytes({
+  bytes,
+  fileName,
+  mimeType,
+}: {
+  bytes: Uint8Array;
+  fileName: string;
+  mimeType: string;
+}) {
+  const blob = new Blob([toArrayBuffer(bytes)], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function pixelsToEmu(pixels: number) {
+  return Math.round(pixels * 9525);
+}
+
+function getXmlMimeExtension(mimeType: string) {
+  return mimeType === "image/png" ? "png" : "jpeg";
+}
+
+function getXmlMimeContentType(mimeType: string) {
+  return mimeType === "image/png" ? "image/png" : "image/jpeg";
+}
+
+function ensureContentTypeDefault(
+  contentTypesXml: XMLDocument,
+  extension: string,
+  contentType: string,
+) {
+  const existing = Array.from(contentTypesXml.getElementsByTagName("Default")).find(
+    (node) => node.getAttribute("Extension") === extension,
+  );
+
+  if (existing) {
+    return;
+  }
+
+  const defaultNode = contentTypesXml.createElementNS(
+    "http://schemas.openxmlformats.org/package/2006/content-types",
+    "Default",
+  );
+
+  defaultNode.setAttribute("Extension", extension);
+  defaultNode.setAttribute("ContentType", contentType);
+  contentTypesXml.documentElement.append(defaultNode);
+}
+
+function getPageAnchorMarkers(blocks: Element[]) {
+  const pageStarts = [0];
+
+  blocks.forEach((block, index) => {
+    const hasManualBreak = block.getElementsByTagName("w:br").length > 0
+      ? Array.from(block.getElementsByTagName("w:br")).some(
+          (node) => node.getAttribute("w:type") === "page",
+        )
+      : false;
+    const hasRenderedBreak =
+      block.getElementsByTagName("w:lastRenderedPageBreak").length > 0;
+
+    if ((hasManualBreak || hasRenderedBreak) && index + 1 < blocks.length) {
+      pageStarts.push(index + 1);
+    }
+  });
+
+  return pageStarts;
+}
+
+function ensureParagraphTarget(
+  documentXml: XMLDocument,
+  body: Element,
+  block: Element | undefined,
+) {
+  if (!block) {
+    const paragraph = documentXml.createElementNS(
+      "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "w:p",
+    );
+
+    body.insertBefore(paragraph, body.lastElementChild);
+    return paragraph;
+  }
+
+  if (block.localName === "p") {
+    return block;
+  }
+
+  const paragraph = documentXml.createElementNS(
+    "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "w:p",
+  );
+
+  body.insertBefore(paragraph, block);
+  return paragraph;
+}
+
+function buildAnchoredDrawingXml({
+  relationshipId,
+  name,
+  widthPx,
+  heightPx,
+  xPx,
+  yPx,
+  drawingId,
+}: {
+  relationshipId: string;
+  name: string;
+  widthPx: number;
+  heightPx: number;
+  xPx: number;
+  yPx: number;
+  drawingId: number;
+}) {
+  const widthEmu = pixelsToEmu(widthPx);
+  const heightEmu = pixelsToEmu(heightPx);
+  const xEmu = pixelsToEmu(xPx);
+  const yEmu = pixelsToEmu(yPx);
+  const escapedName = escapeXml(name);
+
+  return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251659264" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${xEmu}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${yEmu}</wp:posOffset></wp:positionV><wp:extent cx="${widthEmu}" cy="${heightEmu}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${drawingId}" name="${escapedName}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="${escapedName}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${widthEmu}" cy="${heightEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+}
+
 function removeExternalStyles(container: HTMLElement) {
   container
     .querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')
@@ -879,16 +1016,13 @@ export default function PdfSignatureEditor() {
         });
       }
 
-      const savedBytes = await outputPdf.save();
-      const blob = new Blob([toArrayBuffer(savedBytes)], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
       const baseName = sanitizeDownloadName(documentName);
 
-      link.href = url;
-      link.download = `${baseName}-signed.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBytes({
+        bytes: await outputPdf.save(),
+        fileName: `${baseName}-signed.pdf`,
+        mimeType: "application/pdf",
+      });
       setStatus("Signed PDF exported.");
     } catch (error) {
       setStatus(
@@ -988,18 +1122,13 @@ export default function PdfSignatureEditor() {
         });
       }
 
-      const savedBytes = await outputPdf.save();
-      const blob = new Blob([toArrayBuffer(savedBytes)], {
-        type: "application/pdf",
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
       const baseName = sanitizeDownloadName(documentName);
 
-      link.href = url;
-      link.download = `${baseName}-signed.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBytes({
+        bytes: await outputPdf.save(),
+        fileName: `${baseName}-signed.pdf`,
+        mimeType: "application/pdf",
+      });
       setStatus("Signed PDF exported.");
     } catch (error) {
       setStatus(
@@ -1013,8 +1142,161 @@ export default function PdfSignatureEditor() {
     }
   };
 
-  const exportDocument =
-    documentType === "docx" ? exportWordPreviewAsPdf : exportPdfDocument;
+  const exportWordDocument = async () => {
+    if (!documentBytes || placements.length === 0) {
+      setStatus("Add at least one signature before exporting.");
+      return;
+    }
+
+    setIsExporting(true);
+    setStatus("Exporting signed Word document...");
+
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = await JSZip.loadAsync(toArrayBuffer(documentBytes));
+      const documentXmlSource = await zip.file("word/document.xml")?.async("string");
+      const relationshipsSource = await zip
+        .file("word/_rels/document.xml.rels")
+        ?.async("string");
+      const contentTypesSource = await zip.file("[Content_Types].xml")?.async("string");
+
+      if (!documentXmlSource || !relationshipsSource || !contentTypesSource) {
+        throw new Error("DOCX package is missing required XML parts.");
+      }
+
+      const parser = new DOMParser();
+      const serializer = new XMLSerializer();
+      const documentXml = parser.parseFromString(documentXmlSource, "application/xml");
+      const relationshipsXml = parser.parseFromString(
+        relationshipsSource,
+        "application/xml",
+      );
+      const contentTypesXml = parser.parseFromString(
+        contentTypesSource,
+        "application/xml",
+      );
+      const body = documentXml.getElementsByTagName("w:body")[0];
+      const relationshipsRoot = relationshipsXml.documentElement;
+
+      if (!body || !relationshipsRoot) {
+        throw new Error("Unable to parse DOCX structure.");
+      }
+
+      const blocks = Array.from(body.children).filter(
+        (node) => node.localName !== "sectPr",
+      );
+      const pageStarts = getPageAnchorMarkers(blocks);
+      const pageTargets = pageStarts.map((index) => blocks[index]);
+      const relationshipIds = Array.from(
+        relationshipsRoot.getElementsByTagName("Relationship"),
+      )
+        .map((node) => node.getAttribute("Id") ?? "")
+        .map((value) =>
+          value.startsWith("rId") ? Number.parseInt(value.slice(3), 10) : NaN,
+        )
+        .filter((value) => Number.isFinite(value));
+      let nextRelationshipId =
+        (relationshipIds.length > 0 ? Math.max(...relationshipIds) : 0) + 1;
+      let nextDrawingId = 1_000;
+      const fallbackPageSize =
+        docxPageSize ?? pageSizes[0] ?? DEFAULT_WORD_PAGE_SIZE;
+
+      for (const placement of placements) {
+        const signature = signatures.find(
+          (asset) => asset.id === placement.signatureId,
+        );
+
+        if (!signature) {
+          continue;
+        }
+
+        const targetParagraph = ensureParagraphTarget(
+          documentXml,
+          body,
+          pageTargets[placement.pageIndex],
+        );
+        const relationshipId = `rId${nextRelationshipId}`;
+        const extension = getXmlMimeExtension(signature.mimeType);
+        const contentType = getXmlMimeContentType(signature.mimeType);
+        const mediaName = `signature-${placement.id}.${extension}`;
+        const pageSize = pageSizes[placement.pageIndex] ?? fallbackPageSize;
+        const widthPx = placement.width * pageSize.width;
+        const heightPx = placement.height * pageSize.height;
+        const xPx = placement.x * pageSize.width;
+        const yPx = placement.y * pageSize.height;
+        const relationshipNode = relationshipsXml.createElementNS(
+          "http://schemas.openxmlformats.org/package/2006/relationships",
+          "Relationship",
+        );
+
+        relationshipNode.setAttribute("Id", relationshipId);
+        relationshipNode.setAttribute(
+          "Type",
+          "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+        );
+        relationshipNode.setAttribute("Target", `media/${mediaName}`);
+        relationshipsRoot.append(relationshipNode);
+        ensureContentTypeDefault(contentTypesXml, extension, contentType);
+        zip.file(`word/media/${mediaName}`, toArrayBuffer(signature.bytes));
+
+        const wrapperXml = parser.parseFromString(
+          `<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">${buildAnchoredDrawingXml({
+            relationshipId,
+            name: signature.name,
+            widthPx,
+            heightPx,
+            xPx,
+            yPx,
+            drawingId: nextDrawingId,
+          })}</root>`,
+          "application/xml",
+        );
+        const importedNode = wrapperXml.documentElement.firstElementChild;
+
+        if (!importedNode) {
+          throw new Error("Unable to build signature drawing.");
+        }
+
+        targetParagraph.append(documentXml.importNode(importedNode, true));
+        nextRelationshipId += 1;
+        nextDrawingId += 1;
+      }
+
+      zip.file("word/document.xml", serializer.serializeToString(documentXml));
+      zip.file(
+        "word/_rels/document.xml.rels",
+        serializer.serializeToString(relationshipsXml),
+      );
+      zip.file(
+        "[Content_Types].xml",
+        serializer.serializeToString(contentTypesXml),
+      );
+
+      const baseName = sanitizeDownloadName(documentName);
+      const savedBytes = new Uint8Array(
+        await zip.generateAsync({
+          compression: "DEFLATE",
+          type: "arraybuffer",
+        }),
+      );
+      downloadBytes({
+        bytes: savedBytes,
+        fileName: `${baseName}-signed.docx`,
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      setStatus("Signed Word document exported.");
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? `Export failed: ${error.message}`
+          : "Export failed.",
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const pageCount =
     documentType === "docx"
       ? docxMetadataPageCount ?? pageSizes.length
@@ -1096,14 +1378,35 @@ export default function PdfSignatureEditor() {
               +
             </button>
           </div>
-          <button
-            className="primary-action"
-            disabled={!documentBytes || placements.length === 0 || isExporting}
-            onClick={exportDocument}
-            type="button"
-          >
-            {isExporting ? "Exporting" : "Export PDF"}
-          </button>
+          {documentType === "docx" ? (
+            <>
+              <button
+                className="secondary-action"
+                disabled={!documentBytes || placements.length === 0 || isExporting}
+                onClick={exportWordPreviewAsPdf}
+                type="button"
+              >
+                {isExporting ? "Exporting" : "Export PDF"}
+              </button>
+              <button
+                className="primary-action"
+                disabled={!documentBytes || placements.length === 0 || isExporting}
+                onClick={exportWordDocument}
+                type="button"
+              >
+                {isExporting ? "Exporting" : "Export Word"}
+              </button>
+            </>
+          ) : (
+            <button
+              className="primary-action"
+              disabled={!documentBytes || placements.length === 0 || isExporting}
+              onClick={exportPdfDocument}
+              type="button"
+            >
+              {isExporting ? "Exporting" : "Export PDF"}
+            </button>
+          )}
         </div>
       </header>
 

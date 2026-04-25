@@ -121,6 +121,7 @@ button:disabled {
 
 .file-control,
 .primary-action,
+.secondary-action,
 .segmented-control button,
 .zoom-control button,
 .inspector button {
@@ -192,6 +193,17 @@ button:disabled {
 
 .primary-action:not(:disabled):hover {
   background: var(--accent-strong);
+}
+
+.secondary-action {
+  background: #ffffff;
+  border-color: var(--line);
+  color: #1f2937;
+  padding: 0 16px;
+}
+
+.secondary-action:not(:disabled):hover {
+  background: #f8fafc;
 }
 
 .editor-body {
