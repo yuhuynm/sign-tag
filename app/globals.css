@@ -278,6 +278,22 @@ button:disabled {
   width: 100%;
 }
 
+.signature-text-preview {
+  align-items: center;
+  background: #eef6ff;
+  border: 1px dashed #93c5fd;
+  border-radius: 6px;
+  color: #172033;
+  display: flex;
+  font-size: 18px;
+  height: 74px;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 10px;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .signature-tile span {
   color: #344054;
   display: block;
@@ -304,9 +320,15 @@ button:disabled {
 }
 
 .signature-drag-preview img {
-  height: 50%;
+  height: 100%;
   object-fit: contain;
-  width: 50%;
+  width: 100%;
+}
+
+.signature-drag-preview.is-text {
+  align-items: center;
+  display: flex;
+  justify-content: center;
 }
 
 .inspector {
@@ -498,6 +520,26 @@ button:disabled {
   width: 100%;
 }
 
+.placed-signature-text {
+  align-items: center;
+  color: #172033;
+  display: flex;
+  font-family: var(--text-tag-font-family, Arial), Helvetica, sans-serif;
+  font-size: var(--text-tag-font-size, 13px);
+  font-style: var(--text-tag-font-style, normal);
+  font-weight: var(--text-tag-font-weight, 800);
+  height: 100%;
+  justify-content: var(--text-tag-text-align, center);
+  line-height: 1;
+  overflow: hidden;
+  padding: 0 var(--text-tag-padding-x, 1px);
+  pointer-events: none;
+  text-align: var(--text-tag-text-align, center);
+  text-decoration: var(--text-tag-text-decoration, none);
+  white-space: nowrap;
+  width: 100%;
+}
+
 .placed-signature.is-selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgb(15 118 110 / 0.18);
@@ -512,6 +554,162 @@ button:disabled {
   position: absolute;
   right: -7px;
   width: 14px;
+}
+
+.tag-context-menu {
+  background: #ffffff;
+  border: 1px solid #3a5ea7;
+  box-shadow: 0 12px 26px rgb(16 24 40 / 0.18);
+  display: grid;
+  min-width: 142px;
+  padding: 4px 0;
+  position: fixed;
+  z-index: 20;
+}
+
+.tag-context-menu button {
+  align-items: center;
+  background: #ffffff;
+  border: 0;
+  color: #1f2937;
+  display: grid;
+  font-size: 13px;
+  gap: 8px;
+  grid-template-columns: 20px 1fr;
+  justify-items: start;
+  min-height: 34px;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.tag-context-menu button:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.tag-context-menu button:disabled {
+  color: #9ca3af;
+}
+
+.tag-context-menu span {
+  color: #6b7280;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.properties-backdrop {
+  align-items: center;
+  background: rgb(15 23 42 / 0.28);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 30;
+}
+
+.properties-dialog {
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgb(16 24 40 / 0.24);
+  min-height: 390px;
+  width: min(620px, calc(100vw - 48px));
+}
+
+.properties-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: 18px 22px;
+}
+
+.properties-header h2 {
+  font-size: 24px;
+  margin: 0;
+}
+
+.properties-header button {
+  background: transparent;
+  border: 0;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.properties-tabs {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 18px;
+  padding: 0 20px;
+}
+
+.properties-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  color: #707070;
+  font-size: 16px;
+  font-weight: 800;
+  padding: 14px 20px 10px;
+  text-transform: uppercase;
+}
+
+.properties-tabs button[aria-pressed="true"] {
+  border-color: #e31b5f;
+  color: #e31b5f;
+}
+
+.properties-grid,
+.properties-appearance {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.properties-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.properties-appearance {
+  align-items: end;
+  grid-template-columns: 1.2fr 0.6fr 1fr;
+}
+
+.properties-dialog label {
+  color: #707070;
+  display: grid;
+  gap: 5px;
+  font-size: 14px;
+}
+
+.properties-dialog input,
+.properties-dialog select {
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #9ca3af;
+  color: #202124;
+  font: inherit;
+  min-height: 32px;
+  outline: 0;
+}
+
+.format-buttons,
+.align-buttons {
+  display: flex;
+  gap: 0;
+}
+
+.format-buttons button,
+.align-buttons button {
+  background: #eeeeee;
+  border: 0;
+  font-size: 14px;
+  font-weight: 800;
+  min-height: 36px;
+  min-width: 44px;
+  text-transform: capitalize;
+}
+
+.format-buttons button[aria-pressed="true"],
+.align-buttons button[aria-pressed="true"] {
+  background: #d7d7d7;
 }
 
 @media (max-width: 900px) {

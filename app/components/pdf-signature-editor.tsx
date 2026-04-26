@@ -11,20 +11,61 @@ type EditorMode = "edit" | "review";
 type DocumentType = "pdf" | "docx";
 type PdfJsLib = typeof import("pdfjs-dist");
 
-type SignatureAsset = {
+type BaseSignatureOption = {
   id: string;
   name: string;
+  description?: string;
+  disabled?: boolean;
+  attributes?: Record<string, string | number | boolean>;
+};
+
+export type ImageSignatureOption = BaseSignatureOption & {
+  kind: "image";
   src: string;
   mimeType: string;
+};
+
+export type TextSignatureOption = BaseSignatureOption & {
+  kind: "text";
+  value: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: "normal" | "bold";
+  aspectRatio?: number;
+};
+
+export type SignatureOption = ImageSignatureOption | TextSignatureOption;
+
+export type PdfSignatureEditorOptions = {
+  title?: string;
+  initialStatus?: string;
+  documentUploadLabel?: string;
+  signaturesTitle?: string;
+  emptySignaturesText?: string;
+  loadingSignaturesText?: string;
+  emptyDocumentTitle?: string;
+  emptyDocumentDescription?: string;
+  maxPdfBytes?: number;
+  maxDocxBytes?: number;
+  maxPages?: number;
+  maxPlacements?: number;
+  defaultSignatureWidthPx?: number;
+  signatureAspectRatio?: number;
+  minSignatureRatio?: number;
+};
+
+type PdfSignatureEditorProps = {
+  signatures: SignatureOption[];
+  options?: PdfSignatureEditorOptions;
+};
+
+type ImageSignatureAsset = ImageSignatureOption & {
   bytes: Uint8Array;
 };
 
-type MockSignature = {
-  id: string;
-  name: string;
-  src: string;
-  mimeType: string;
-};
+type TextSignatureAsset = TextSignatureOption;
+
+type SignatureAsset = ImageSignatureAsset | TextSignatureAsset;
 
 type PageSize = {
   width: number;
@@ -50,6 +91,27 @@ type Placement = {
   y: number;
   width: number;
   height: number;
+  textStyle?: TextPlacementStyle;
+};
+
+type TextPlacementStyle = {
+  align?: "left" | "center" | "right";
+  fontFamily?: string;
+  fontSize?: number;
+  fontStyle?: "normal" | "italic";
+  fontWeight?: "normal" | "bold";
+  textDecoration?: "none" | "underline";
+  value?: string;
+};
+
+type ResolvedTextStyle = {
+  align: "left" | "center" | "right";
+  fontFamily: string;
+  fontSize: number;
+  fontStyle: "normal" | "italic";
+  fontWeight: "normal" | "bold";
+  textDecoration: "none" | "underline";
+  value: string;
 };
 
 type Interaction =
@@ -62,6 +124,17 @@ type Interaction =
       startPlacement: Placement;
     }
   | null;
+
+type PlacementContextMenu = {
+  placementId: string | null;
+  x: number;
+  y: number;
+} | null;
+
+type TextPropertiesModalState = {
+  activeTab: "general" | "appearance";
+  placementId: string;
+} | null;
 
 type DragAnchor = {
   offsetX: number;
@@ -76,27 +149,11 @@ const MAX_PAGES = 200;
 const MAX_PLACEMENTS = 300;
 const DEFAULT_WORD_PAGE_SIZE: PageSize = { width: 816, height: 1056 };
 const SIGNATURE_ASPECT_RATIO = 0.42;
+const DEFAULT_TEXT_TAG_FONT_SIZE = 13;
+const TEXT_TAG_PADDING_PX = 1;
+const TEXT_TAG_WIDTH_FACTOR = 0.62;
+const CANVAS_EXPORT_SCALE = 2;
 const WORD_PAGE_GAP_PX = 24;
-const MOCK_SIGNATURES: MockSignature[] = [
-  {
-    id: "signature-nguyen-van-a",
-    name: "Nguyen Van A",
-    mimeType: "image/svg+xml",
-    src: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20480%20180'%3E%3Crect%20width='480'%20height='180'%20fill='none'/%3E%3Cpath%20d='M42%20116c42-54%2080-72%20112-54%2029%2017%2015%2055-17%2052-33-3-32-48%204-70%2048-29%20103%2048%2064%2086-22%2022-42%2011-33-12%2013%2029%2051%2040%2092%2028%2026-8%2041-28%2041-28s-9%2040%2018%2039c35-1%2056-54%2056-54'%20fill='none'%20stroke='%230f766e'%20stroke-width='12'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3Ctext%20x='58'%20y='156'%20font-family='Arial,Helvetica,sans-serif'%20font-size='24'%20font-weight='700'%20fill='%23172033'%3ENguyen%20Van%20A%3C/text%3E%3C/svg%3E",
-  },
-  {
-    id: "signature-tran-thi-b",
-    name: "Tran Thi B",
-    mimeType: "image/svg+xml",
-    src: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20480%20180'%3E%3Crect%20width='480'%20height='180'%20fill='none'/%3E%3Cpath%20d='M46%2090c72-56%20121-54%20118-14-3%2037-77%2058-83%2026-6-31%2060-65%20111-27%2046%2034%205%2092-27%2068-22-17%2011-65%2045-51%2025%2010%2016%2054-15%2058-35%204-11-55%2031-50%2036%204%2049%2043%2085%2040%2029-2%2046-22%2062-45'%20fill='none'%20stroke='%231f2937'%20stroke-width='11'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3Ctext%20x='58'%20y='156'%20font-family='Arial,Helvetica,sans-serif'%20font-size='24'%20font-weight='700'%20fill='%23172033'%3ETran%20Thi%20B%3C/text%3E%3C/svg%3E",
-  },
-  {
-    id: "signature-company-seal",
-    name: "Company Authorized",
-    mimeType: "image/svg+xml",
-    src: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20480%20180'%3E%3Crect%20width='480'%20height='180'%20fill='none'/%3E%3Cellipse%20cx='153'%20cy='88'%20rx='102'%20ry='58'%20fill='none'%20stroke='%23b42318'%20stroke-width='9'/%3E%3Cellipse%20cx='153'%20cy='88'%20rx='73'%20ry='36'%20fill='none'%20stroke='%23b42318'%20stroke-width='5'/%3E%3Cpath%20d='M279%20113c24-39%2055-59%2092-47%2024%208%2030%2034%207%2046-21%2011-50-3-43-24%207-22%2050-28%2081%2010'%20fill='none'%20stroke='%23b42318'%20stroke-width='10'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3Ctext%20x='88'%20y='95'%20font-family='Arial,Helvetica,sans-serif'%20font-size='22'%20font-weight='800'%20fill='%23b42318'%3EAPPROVED%3C/text%3E%3Ctext%20x='58'%20y='156'%20font-family='Arial,Helvetica,sans-serif'%20font-size='24'%20font-weight='700'%20fill='%23172033'%3ECompany%20Authorized%3C/text%3E%3C/svg%3E",
-  },
-];
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -136,6 +193,35 @@ async function svgDataUrlToPngBytes(dataUrl: string) {
 
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   return canvasToPngBytes(canvas);
+}
+
+function isImageSignature(signature: SignatureAsset): signature is ImageSignatureAsset {
+  return signature.kind === "image";
+}
+
+function isTextSignature(signature: SignatureAsset): signature is TextSignatureAsset {
+  return signature.kind === "text";
+}
+
+async function loadSignatureAsset(signature: SignatureOption): Promise<SignatureAsset> {
+  if (signature.kind === "text") {
+    return signature;
+  }
+
+  if (signature.mimeType === "image/png" || signature.mimeType === "image/jpeg") {
+    const response = await fetch(signature.src);
+
+    return {
+      ...signature,
+      bytes: new Uint8Array(await response.arrayBuffer()),
+    };
+  }
+
+  return {
+    ...signature,
+    bytes: await svgDataUrlToPngBytes(signature.src),
+    mimeType: "image/png",
+  };
 }
 
 function isPdf(bytes: Uint8Array) {
@@ -279,6 +365,49 @@ function getXmlMimeContentType(mimeType: string) {
   return mimeType === "image/png" ? "image/png" : "image/jpeg";
 }
 
+function getResolvedTextStyle(
+  signature: TextSignatureAsset,
+  placement?: Placement,
+): ResolvedTextStyle {
+  return {
+    align: placement?.textStyle?.align ?? "center",
+    fontFamily:
+      placement?.textStyle?.fontFamily ?? signature.fontFamily ?? "Arial",
+    fontSize:
+      placement?.textStyle?.fontSize ??
+      signature.fontSize ??
+      DEFAULT_TEXT_TAG_FONT_SIZE,
+    fontStyle: placement?.textStyle?.fontStyle ?? "normal",
+    fontWeight:
+      placement?.textStyle?.fontWeight ?? signature.fontWeight ?? "bold",
+    textDecoration: placement?.textStyle?.textDecoration ?? "none",
+    value: placement?.textStyle?.value ?? signature.value,
+  };
+}
+
+function getTextTagMetrics({
+  fontSize,
+  text,
+  scale = 1,
+}: {
+  fontSize?: number;
+  scale?: number;
+  text: string;
+}) {
+  const resolvedFontSize = (fontSize ?? DEFAULT_TEXT_TAG_FONT_SIZE) * scale;
+  const horizontalPadding = TEXT_TAG_PADDING_PX * scale;
+  const estimatedTextWidth =
+    text.length * resolvedFontSize * TEXT_TAG_WIDTH_FACTOR;
+
+  return {
+    boxHeight: resolvedFontSize + horizontalPadding * 2,
+    boxWidth: estimatedTextWidth + horizontalPadding * 2,
+    fontSize: resolvedFontSize,
+    horizontalPadding,
+    lineHeight: resolvedFontSize,
+  };
+}
+
 function ensureContentTypeDefault(
   contentTypesXml: XMLDocument,
   extension: string,
@@ -376,6 +505,50 @@ function buildAnchoredDrawingXml({
   return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251659264" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${xEmu}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${yEmu}</wp:posOffset></wp:positionV><wp:extent cx="${widthEmu}" cy="${heightEmu}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${drawingId}" name="${escapedName}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="${escapedName}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${widthEmu}" cy="${heightEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 }
 
+function buildAnchoredTextBoxXml({
+  align,
+  drawingId,
+  fontFamily,
+  fontSizePx,
+  fontStyle,
+  fontWeight,
+  heightPx,
+  textDecoration,
+  text,
+  widthPx,
+  xPx,
+  yPx,
+}: {
+  align: "left" | "center" | "right";
+  drawingId: number;
+  fontFamily: string;
+  fontSizePx: number;
+  fontStyle: "normal" | "italic";
+  fontWeight: "normal" | "bold";
+  heightPx: number;
+  textDecoration: "none" | "underline";
+  text: string;
+  widthPx: number;
+  xPx: number;
+  yPx: number;
+}) {
+  const widthEmu = pixelsToEmu(widthPx);
+  const heightEmu = pixelsToEmu(heightPx);
+  const xEmu = pixelsToEmu(xPx);
+  const yEmu = pixelsToEmu(yPx);
+  const escapedText = escapeXml(text);
+  const escapedFontFamily = escapeXml(fontFamily);
+  const fontSizeHalfPoints = Math.max(1, Math.round(fontSizePx * 1.5));
+  const justification =
+    align === "left" ? "left" : align === "right" ? "right" : "center";
+  const boldXml = fontWeight === "bold" ? "<w:b/>" : "";
+  const italicXml = fontStyle === "italic" ? "<w:i/>" : "";
+  const underlineXml =
+    textDecoration === "underline" ? '<w:u w:val="single"/>' : "";
+
+  return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251659264" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${xEmu}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${yEmu}</wp:posOffset></wp:positionV><wp:extent cx="${widthEmu}" cy="${heightEmu}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${drawingId}" name="Text tag ${drawingId}"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${widthEmu}" cy="${heightEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent><w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="${justification}"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="${escapedFontFamily}" w:hAnsi="${escapedFontFamily}"/>${boldXml}${italicXml}${underlineXml}<w:sz w:val="${fontSizeHalfPoints}"/></w:rPr><w:t>${escapedText}</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+}
+
 function removeExternalStyles(container: HTMLElement) {
   container
     .querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')
@@ -452,6 +625,37 @@ async function drawSignatureOnCanvas({
     throw new Error("Unable to draw signature.");
   }
 
+  if (isTextSignature(signature)) {
+    const textStyle = getResolvedTextStyle(signature, placement);
+    const height = placement.height * canvas.height;
+    const width = placement.width * canvas.width;
+    const x = placement.x * canvas.width;
+    const y = placement.y * canvas.height;
+    const metrics = getTextTagMetrics({
+      fontSize: textStyle.fontSize,
+      scale: CANVAS_EXPORT_SCALE,
+      text: textStyle.value,
+    });
+
+    context.fillStyle = "#172033";
+    context.font = `${textStyle.fontStyle} ${textStyle.fontWeight === "normal" ? "400" : "700"} ${metrics.fontSize}px ${textStyle.fontFamily}, Arial, Helvetica, sans-serif`;
+    context.textAlign = textStyle.align;
+    context.textBaseline = "middle";
+    const textX =
+      textStyle.align === "left"
+        ? x + metrics.horizontalPadding
+        : textStyle.align === "right"
+          ? x + width - metrics.horizontalPadding
+          : x + width / 2;
+    context.fillText(
+      textStyle.value,
+      textX,
+      y + height / 2,
+      Math.max(1, width - metrics.horizontalPadding * 2),
+    );
+    return;
+  }
+
   const image = await createImageBitmap(
     new Blob([toArrayBuffer(signature.bytes)], { type: signature.mimeType }),
   );
@@ -520,12 +724,56 @@ function expandWordPageRects(
   return nextRects;
 }
 
-function getDefaultSignatureSize(pageWidth: number) {
-  const width = Math.min(0.34, DEFAULT_SIGNATURE_WIDTH_PX / pageWidth);
+function getDefaultPlacementSize({
+  pageSize,
+  signatureAspectRatio,
+  signature,
+  signatureWidthPx,
+}: {
+  pageSize: PageSize;
+  signatureAspectRatio: number;
+  signature: SignatureAsset;
+  signatureWidthPx: number;
+}) {
+  if (isTextSignature(signature)) {
+    const textStyle = getResolvedTextStyle(signature);
+    const metrics = getTextTagMetrics({
+      fontSize: textStyle.fontSize,
+      text: textStyle.value,
+    });
+
+    return {
+      height: metrics.boxHeight / pageSize.height,
+      width: metrics.boxWidth / pageSize.width,
+    };
+  }
+
+  const width = Math.min(0.34, signatureWidthPx / pageSize.width);
 
   return {
-    height: width * SIGNATURE_ASPECT_RATIO,
+    height: width * signatureAspectRatio,
     width,
+  };
+}
+
+function getTextPlacementSize({
+  pageSize,
+  placement,
+  signature,
+}: {
+  pageSize: PageSize;
+  placement?: Placement;
+  signature: TextSignatureAsset;
+}) {
+  const textStyle = getResolvedTextStyle(signature, placement);
+  const metrics = getTextTagMetrics({
+    fontSize: textStyle.fontSize,
+    text: textStyle.value,
+  });
+
+  return {
+    height: metrics.boxHeight / pageSize.height,
+    width: metrics.boxWidth / pageSize.width,
   };
 }
 
@@ -550,20 +798,57 @@ function getDragAnchor(event: React.DragEvent) {
 
 function setSignatureDragImage({
   event,
+  signatureAspectRatio,
   signature,
+  signatureWidthPx,
+  zoom,
 }: {
   event: React.DragEvent<HTMLElement>;
+  signatureAspectRatio: number;
   signature: SignatureAsset;
+  signatureWidthPx: number;
+  zoom: number;
 }) {
   const dragImage = document.createElement("div");
   const image = document.createElement("img");
-  const offsetX = DEFAULT_SIGNATURE_WIDTH_PX / 2;
-  const offsetY = (DEFAULT_SIGNATURE_WIDTH_PX * SIGNATURE_ASPECT_RATIO) / 2;
+  const label = document.createElement("span");
+  const textStyle = isTextSignature(signature)
+    ? getResolvedTextStyle(signature)
+    : null;
+  const textMetrics = isTextSignature(signature)
+    ? getTextTagMetrics({
+        fontSize: textStyle?.fontSize,
+        scale: zoom,
+        text: signature.value,
+      })
+    : null;
+  const dragHeight = textMetrics
+    ? textMetrics.boxHeight
+    : signatureWidthPx * signatureAspectRatio * zoom;
+  const dragWidth = textMetrics ? textMetrics.boxWidth : signatureWidthPx * zoom;
+  const offsetX = dragWidth / 2;
+  const offsetY = dragHeight / 2;
 
-  image.src = signature.src;
-  image.alt = "";
   dragImage.className = "signature-drag-preview";
-  dragImage.append(image);
+  dragImage.style.height = `${dragHeight}px`;
+  dragImage.style.width = `${dragWidth}px`;
+
+  if (isImageSignature(signature)) {
+    image.src = signature.src;
+    image.alt = "";
+    dragImage.append(image);
+  } else {
+    label.textContent = signature.value;
+    label.style.fontFamily = `${textStyle?.fontFamily ?? "Arial"}, Helvetica, sans-serif`;
+    label.style.fontSize = `${textMetrics?.fontSize ?? DEFAULT_TEXT_TAG_FONT_SIZE}px`;
+    label.style.fontStyle = textStyle?.fontStyle ?? "normal";
+    label.style.fontWeight = textStyle?.fontWeight === "normal" ? "400" : "800";
+    label.style.lineHeight = "1";
+    label.style.padding = `0 ${textMetrics?.horizontalPadding ?? TEXT_TAG_PADDING_PX}px`;
+    label.style.textDecoration = textStyle?.textDecoration ?? "none";
+    dragImage.classList.add("is-text");
+    dragImage.append(label);
+  }
   document.body.append(dragImage);
   event.dataTransfer.setDragImage(dragImage, offsetX, offsetY);
   event.dataTransfer.setData(
@@ -573,7 +858,37 @@ function setSignatureDragImage({
   window.requestAnimationFrame(() => dragImage.remove());
 }
 
-export default function PdfSignatureEditor() {
+export default function PdfSignatureEditor({
+  options,
+  signatures: signatureOptions,
+}: PdfSignatureEditorProps) {
+  const editorOptions = useMemo(
+    () => ({
+      defaultSignatureWidthPx:
+        options?.defaultSignatureWidthPx ?? DEFAULT_SIGNATURE_WIDTH_PX,
+      documentUploadLabel: options?.documentUploadLabel ?? "PDF / DOCX",
+      emptyDocumentDescription:
+        options?.emptyDocumentDescription ??
+        "Upload a PDF or DOCX, then drag a signature onto any page.",
+      emptyDocumentTitle:
+        options?.emptyDocumentTitle ??
+        "Open a PDF or Word file to start placing signatures",
+      emptySignaturesText: options?.emptySignaturesText ?? "No signatures available.",
+      initialStatus: options?.initialStatus ?? "Upload a PDF or DOCX to begin.",
+      loadingSignaturesText:
+        options?.loadingSignaturesText ?? "Loading signatures.",
+      maxDocxBytes: options?.maxDocxBytes ?? MAX_DOCX_BYTES,
+      maxPages: options?.maxPages ?? MAX_PAGES,
+      maxPdfBytes: options?.maxPdfBytes ?? MAX_PDF_BYTES,
+      maxPlacements: options?.maxPlacements ?? MAX_PLACEMENTS,
+      minSignatureRatio: options?.minSignatureRatio ?? MIN_SIGNATURE_RATIO,
+      signatureAspectRatio:
+        options?.signatureAspectRatio ?? SIGNATURE_ASPECT_RATIO,
+      signaturesTitle: options?.signaturesTitle ?? "Signatures",
+      title: options?.title ?? "PDF Sign Tag",
+    }),
+    [options],
+  );
   const [mode, setMode] = useState<EditorMode>("edit");
   const [zoom, setZoom] = useState(1);
   const [pdfjs, setPdfjs] = useState<PdfJsLib | null>(null);
@@ -592,7 +907,13 @@ export default function PdfSignatureEditor() {
     null,
   );
   const [interaction, setInteraction] = useState<Interaction>(null);
-  const [status, setStatus] = useState("Upload a PDF or DOCX to begin.");
+  const [contextMenu, setContextMenu] = useState<PlacementContextMenu>(null);
+  const [textPropertiesModal, setTextPropertiesModal] =
+    useState<TextPropertiesModalState>(null);
+  const [clipboardPlacement, setClipboardPlacement] = useState<Placement | null>(
+    null,
+  );
+  const [status, setStatus] = useState(editorOptions.initialStatus);
   const [isExporting, setIsExporting] = useState(false);
 
   const pageSizesRef = useRef<PageSize[]>([]);
@@ -623,29 +944,23 @@ export default function PdfSignatureEditor() {
     let mounted = true;
 
     Promise.all(
-      MOCK_SIGNATURES.map(async (signature) => ({
-        id: signature.id,
-        name: signature.name,
-        src: signature.src,
-        mimeType: "image/png",
-        bytes: await svgDataUrlToPngBytes(signature.src),
-      })),
+      signatureOptions.map((signature) => loadSignatureAsset(signature)),
     )
-      .then((mockSignatures) => {
+      .then((loadedSignatures) => {
         if (mounted) {
-          setSignatures(mockSignatures);
+          setSignatures(loadedSignatures);
         }
       })
       .catch(() => {
         if (mounted) {
-          setStatus("Unable to load mock signatures.");
+          setStatus("Unable to load signatures.");
         }
       });
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [signatureOptions]);
 
   useEffect(() => {
     pageSizesRef.current = pageSizes;
@@ -684,6 +999,9 @@ export default function PdfSignatureEditor() {
     setPageSizes([]);
     setPlacements([]);
     setSelectedPlacementId(null);
+    setClipboardPlacement(null);
+    setContextMenu(null);
+    setTextPropertiesModal(null);
   };
 
   const handleDocumentUpload = async (
@@ -705,8 +1023,12 @@ export default function PdfSignatureEditor() {
           return;
         }
 
-        if (file.size > MAX_PDF_BYTES) {
-          setStatus("PDF rejected: maximum file size is 50 MB.");
+        if (file.size > editorOptions.maxPdfBytes) {
+          setStatus(
+            `PDF rejected: maximum file size is ${Math.round(
+              editorOptions.maxPdfBytes / 1024 / 1024,
+            )} MB.`,
+          );
           return;
         }
 
@@ -726,9 +1048,11 @@ export default function PdfSignatureEditor() {
         });
         const loadedPdf = await loadingTask.promise;
 
-        if (loadedPdf.numPages > MAX_PAGES) {
+        if (loadedPdf.numPages > editorOptions.maxPages) {
           await loadedPdf.destroy();
-          setStatus(`PDF rejected: maximum page count is ${MAX_PAGES}.`);
+          setStatus(
+            `PDF rejected: maximum page count is ${editorOptions.maxPages}.`,
+          );
           return;
         }
 
@@ -748,8 +1072,12 @@ export default function PdfSignatureEditor() {
         return;
       }
 
-      if (file.size > MAX_DOCX_BYTES) {
-        setStatus("DOCX rejected: maximum file size is 30 MB.");
+      if (file.size > editorOptions.maxDocxBytes) {
+        setStatus(
+          `DOCX rejected: maximum file size is ${Math.round(
+            editorOptions.maxDocxBytes / 1024 / 1024,
+          )} MB.`,
+        );
         return;
       }
 
@@ -803,8 +1131,10 @@ export default function PdfSignatureEditor() {
     pointX: number,
     pointY: number,
   ) => {
-    if (placements.length >= MAX_PLACEMENTS) {
-      setStatus(`Placement limit reached: maximum ${MAX_PLACEMENTS}.`);
+    if (placements.length >= editorOptions.maxPlacements) {
+      setStatus(
+        `Placement limit reached: maximum ${editorOptions.maxPlacements}.`,
+      );
       return;
     }
 
@@ -816,7 +1146,12 @@ export default function PdfSignatureEditor() {
     }
 
     const { width: defaultWidth, height: defaultHeight } =
-      getDefaultSignatureSize(pageSize.width * zoom);
+      getDefaultPlacementSize({
+        pageSize,
+        signatureAspectRatio: editorOptions.signatureAspectRatio,
+        signature,
+        signatureWidthPx: editorOptions.defaultSignatureWidthPx,
+      });
     const x = clamp(pointX / (pageSize.width * zoom), 0, 1 - defaultWidth);
     const y = clamp(pointY / (pageSize.height * zoom), 0, 1 - defaultHeight);
     const placement: Placement = {
@@ -831,6 +1166,7 @@ export default function PdfSignatureEditor() {
 
     setPlacements((current) => [...current, placement]);
     setSelectedPlacementId(placement.id);
+    setContextMenu(null);
   };
 
   const handlePageDrop = (
@@ -869,8 +1205,10 @@ export default function PdfSignatureEditor() {
       return;
     }
 
-    if (placements.length >= MAX_PLACEMENTS) {
-      setStatus(`Placement limit reached: maximum ${MAX_PLACEMENTS}.`);
+    if (placements.length >= editorOptions.maxPlacements) {
+      setStatus(
+        `Placement limit reached: maximum ${editorOptions.maxPlacements}.`,
+      );
       return;
     }
 
@@ -883,8 +1221,17 @@ export default function PdfSignatureEditor() {
 
     const anchor = getDragAnchor(event);
     const bounds = event.currentTarget.getBoundingClientRect();
+    const pageSize = {
+      height: bounds.height / zoom,
+      width: bounds.width / zoom,
+    };
     const { width: defaultWidth, height: defaultHeight } =
-      getDefaultSignatureSize(bounds.width);
+      getDefaultPlacementSize({
+        pageSize,
+        signatureAspectRatio: editorOptions.signatureAspectRatio,
+        signature,
+        signatureWidthPx: editorOptions.defaultSignatureWidthPx,
+      });
     const placement: Placement = {
       id: makeId("placement"),
       signatureId,
@@ -905,6 +1252,7 @@ export default function PdfSignatureEditor() {
 
     setPlacements((current) => [...current, placement]);
     setSelectedPlacementId(placement.id);
+    setContextMenu(null);
   };
 
   const startInteraction = (
@@ -912,7 +1260,7 @@ export default function PdfSignatureEditor() {
     placement: Placement,
     kind: "move" | "resize",
   ) => {
-    if (mode !== "edit") {
+    if (mode !== "edit" || event.button !== 0) {
       return;
     }
 
@@ -975,14 +1323,50 @@ export default function PdfSignatureEditor() {
 
           const width = clamp(
             interaction.startPlacement.width + ratioDeltaX,
-            MIN_SIGNATURE_RATIO,
+            editorOptions.minSignatureRatio,
             1 - interaction.startPlacement.x,
           );
           const height = clamp(
             interaction.startPlacement.height + ratioDeltaY,
-            MIN_SIGNATURE_RATIO,
+            editorOptions.minSignatureRatio,
             1 - interaction.startPlacement.y,
           );
+          const signature = signaturesRef.current.find(
+            (asset) => asset.id === placement.signatureId,
+          );
+
+          if (signature && isTextSignature(signature)) {
+            const nextFontSize = Math.max(
+              8,
+              height * pageSize.height - TEXT_TAG_PADDING_PX * 2,
+            );
+            const nextPlacement = {
+              ...placement,
+              textStyle: {
+                ...placement.textStyle,
+                fontSize: nextFontSize,
+              },
+            };
+            const nextSize = getTextPlacementSize({
+              pageSize,
+              placement: nextPlacement,
+              signature,
+            });
+
+            return {
+              ...nextPlacement,
+              height: clamp(
+                nextSize.height,
+                editorOptions.minSignatureRatio,
+                1 - interaction.startPlacement.y,
+              ),
+              width: clamp(
+                nextSize.width,
+                editorOptions.minSignatureRatio,
+                1 - interaction.startPlacement.x,
+              ),
+            };
+          }
 
           return {
             ...placement,
@@ -1008,7 +1392,7 @@ export default function PdfSignatureEditor() {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [interaction, zoom]);
+  }, [editorOptions.minSignatureRatio, interaction, zoom]);
 
   const removeSelectedPlacement = () => {
     if (!selectedPlacementId || mode !== "edit") {
@@ -1019,7 +1403,162 @@ export default function PdfSignatureEditor() {
       current.filter((placement) => placement.id !== selectedPlacementId),
     );
     setSelectedPlacementId(null);
+    setContextMenu(null);
   };
+
+  const openPlacementContextMenu = (
+    event: React.MouseEvent<HTMLElement>,
+    placement: Placement,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+
+    setSelectedPlacementId(placement.id);
+    setContextMenu({
+      placementId: placement.id,
+      x: bounds.left,
+      y: bounds.bottom,
+    });
+  };
+
+  const clearCanvasSelection = () => {
+    setContextMenu(null);
+  };
+
+  const openCanvasContextMenu = (event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (mode !== "edit" || (!selectedPlacementId && !clipboardPlacement)) {
+      return;
+    }
+
+    const placement = selectedPlacementId
+      ? placements.find((item) => item.id === selectedPlacementId)
+      : null;
+
+    if (selectedPlacementId && !placement && !clipboardPlacement) {
+      return;
+    }
+
+    setContextMenu({
+      placementId: placement?.id ?? null,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+
+  const copyPlacement = (placement: Placement) => {
+    setClipboardPlacement(placement);
+    setStatus("Signature tag copied.");
+  };
+
+  const deletePlacement = (placementId: string) => {
+    setPlacements((current) =>
+      current.filter((placement) => placement.id !== placementId),
+    );
+    setSelectedPlacementId(null);
+    setContextMenu(null);
+  };
+
+  const pastePlacement = (sourcePlacement: Placement) => {
+    const pageSize = pageSizesRef.current[sourcePlacement.pageIndex];
+
+    if (!pageSize) {
+      return;
+    }
+
+    const nextPlacement: Placement = {
+      ...sourcePlacement,
+      id: makeId("placement"),
+      x: clamp(sourcePlacement.x + 0.025, 0, 1 - sourcePlacement.width),
+      y: clamp(sourcePlacement.y + 0.025, 0, 1 - sourcePlacement.height),
+    };
+
+    setPlacements((current) => {
+      if (current.length >= editorOptions.maxPlacements) {
+        return current;
+      }
+
+      return [...current, nextPlacement];
+    });
+    setSelectedPlacementId(nextPlacement.id);
+    setContextMenu(null);
+  };
+
+  const handleContextMenuAction = (
+    action: "cut" | "copy" | "paste" | "delete" | "properties",
+  ) => {
+    const placement = placements.find(
+      (item) => item.id === contextMenu?.placementId,
+    );
+
+    if (action === "paste") {
+      const sourcePlacement = clipboardPlacement ?? placement;
+
+      if (sourcePlacement) {
+        pastePlacement(sourcePlacement);
+      } else {
+        setContextMenu(null);
+      }
+      return;
+    }
+
+    if (!placement) {
+      setContextMenu(null);
+      return;
+    }
+
+    if (action === "copy") {
+      copyPlacement(placement);
+      setContextMenu(null);
+      return;
+    }
+
+    if (action === "cut") {
+      copyPlacement(placement);
+      deletePlacement(placement.id);
+      return;
+    }
+
+    if (action === "delete") {
+      deletePlacement(placement.id);
+      return;
+    }
+
+    const signature = signatures.find((asset) => asset.id === placement.signatureId);
+
+    if (signature && isTextSignature(signature)) {
+      setSelectedPlacementId(placement.id);
+      setTextPropertiesModal({
+        activeTab: "general",
+        placementId: placement.id,
+      });
+    }
+
+    setSelectedPlacementId(placement.id);
+    setContextMenu(null);
+  };
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const closeMenu = () => setContextMenu(null);
+
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("keydown", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("keydown", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [contextMenu]);
 
   const exportPdfDocument = async () => {
     if (!documentBytes || placements.length === 0) {
@@ -1045,27 +1584,57 @@ export default function PdfSignatureEditor() {
           continue;
         }
 
-        let image = embeddedImages.get(signature.id);
-
-        if (!image) {
-          image =
-            signature.mimeType === "image/png"
-              ? await outputPdf.embedPng(signature.bytes)
-              : await outputPdf.embedJpg(signature.bytes);
-          embeddedImages.set(signature.id, image);
-        }
-
         const pageWidth = page.getWidth();
         const pageHeight = page.getHeight();
         const width = placement.width * pageWidth;
         const height = placement.height * pageHeight;
 
-        page.drawImage(image, {
-          x: placement.x * pageWidth,
-          y: pageHeight - placement.y * pageHeight - height,
-          width,
-          height,
-        });
+        if (isTextSignature(signature)) {
+          const textStyle = getResolvedTextStyle(signature, placement);
+          const metrics = getTextTagMetrics({
+            fontSize: textStyle.fontSize,
+            text: textStyle.value,
+          });
+          const measuredWidth =
+            textStyle.value.length * metrics.fontSize * TEXT_TAG_WIDTH_FACTOR;
+          const textX =
+            textStyle.align === "left"
+              ? placement.x * pageWidth + metrics.horizontalPadding
+              : textStyle.align === "right"
+                ? placement.x * pageWidth +
+                  width -
+                  metrics.horizontalPadding -
+                  measuredWidth
+                : placement.x * pageWidth + (width - measuredWidth) / 2;
+
+          page.drawText(textStyle.value, {
+            x: textX,
+            y:
+              pageHeight -
+              placement.y * pageHeight -
+              height / 2 -
+              metrics.fontSize * 0.35,
+            maxWidth: Math.max(1, width - metrics.horizontalPadding * 2),
+            size: metrics.fontSize,
+          });
+        } else {
+          let image = embeddedImages.get(signature.id);
+
+          if (!image) {
+            image =
+              signature.mimeType === "image/png"
+                ? await outputPdf.embedPng(signature.bytes)
+                : await outputPdf.embedJpg(signature.bytes);
+            embeddedImages.set(signature.id, image);
+          }
+
+          page.drawImage(image, {
+            x: placement.x * pageWidth,
+            y: pageHeight - placement.y * pageHeight - height,
+            width,
+            height,
+          });
+        }
       }
 
       const baseName = sanitizeDownloadName(documentName);
@@ -1267,40 +1836,67 @@ export default function PdfSignatureEditor() {
           body,
           pageTargets[placement.pageIndex],
         );
-        const relationshipId = `rId${nextRelationshipId}`;
-        const extension = getXmlMimeExtension(signature.mimeType);
-        const contentType = getXmlMimeContentType(signature.mimeType);
-        const mediaName = `signature-${placement.id}.${extension}`;
         const pageSize = pageSizes[placement.pageIndex] ?? fallbackPageSize;
         const widthPx = placement.width * pageSize.width;
         const heightPx = placement.height * pageSize.height;
         const xPx = placement.x * pageSize.width;
         const yPx = placement.y * pageSize.height;
-        const relationshipNode = relationshipsXml.createElementNS(
-          "http://schemas.openxmlformats.org/package/2006/relationships",
-          "Relationship",
-        );
+        let drawingXml: string;
 
-        relationshipNode.setAttribute("Id", relationshipId);
-        relationshipNode.setAttribute(
-          "Type",
-          "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
-        );
-        relationshipNode.setAttribute("Target", `media/${mediaName}`);
-        relationshipsRoot.append(relationshipNode);
-        ensureContentTypeDefault(contentTypesXml, extension, contentType);
-        zip.file(`word/media/${mediaName}`, toArrayBuffer(signature.bytes));
+        if (isTextSignature(signature)) {
+          const textStyle = getResolvedTextStyle(signature, placement);
+          const metrics = getTextTagMetrics({
+            fontSize: textStyle.fontSize,
+            text: textStyle.value,
+          });
 
-        const wrapperXml = parser.parseFromString(
-          `<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">${buildAnchoredDrawingXml({
-            relationshipId,
-            name: signature.name,
-            widthPx,
+          drawingXml = buildAnchoredTextBoxXml({
+            align: textStyle.align,
+            drawingId: nextDrawingId,
+            fontFamily: textStyle.fontFamily,
+            fontSizePx: metrics.fontSize,
+            fontStyle: textStyle.fontStyle,
+            fontWeight: textStyle.fontWeight,
             heightPx,
+            text: textStyle.value,
+            textDecoration: textStyle.textDecoration,
+            widthPx,
             xPx,
             yPx,
+          });
+        } else {
+          const relationshipId = `rId${nextRelationshipId}`;
+          const extension = getXmlMimeExtension(signature.mimeType);
+          const contentType = getXmlMimeContentType(signature.mimeType);
+          const mediaName = `signature-${placement.id}.${extension}`;
+          const relationshipNode = relationshipsXml.createElementNS(
+            "http://schemas.openxmlformats.org/package/2006/relationships",
+            "Relationship",
+          );
+
+          relationshipNode.setAttribute("Id", relationshipId);
+          relationshipNode.setAttribute(
+            "Type",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          );
+          relationshipNode.setAttribute("Target", `media/${mediaName}`);
+          relationshipsRoot.append(relationshipNode);
+          ensureContentTypeDefault(contentTypesXml, extension, contentType);
+          zip.file(`word/media/${mediaName}`, toArrayBuffer(signature.bytes));
+          drawingXml = buildAnchoredDrawingXml({
             drawingId: nextDrawingId,
-          })}</root>`,
+            heightPx,
+            name: signature.name,
+            relationshipId,
+            widthPx,
+            xPx,
+            yPx,
+          });
+          nextRelationshipId += 1;
+        }
+
+        const wrapperXml = parser.parseFromString(
+          `<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">${drawingXml}</root>`,
           "application/xml",
         );
         const importedNode = wrapperXml.documentElement.firstElementChild;
@@ -1310,7 +1906,6 @@ export default function PdfSignatureEditor() {
         }
 
         targetParagraph.append(documentXml.importNode(importedNode, true));
-        nextRelationshipId += 1;
         nextDrawingId += 1;
       }
 
@@ -1363,6 +1958,68 @@ export default function PdfSignatureEditor() {
     },
     [docxMetadataPageCount, documentName],
   );
+  const textPropertiesPlacement =
+    placements.find((placement) => placement.id === textPropertiesModal?.placementId) ??
+    null;
+  const textPropertiesSignature = textPropertiesPlacement
+    ? signatures.find((asset) => asset.id === textPropertiesPlacement.signatureId)
+    : null;
+  const textPropertiesStyle =
+    textPropertiesPlacement &&
+    textPropertiesSignature &&
+    isTextSignature(textPropertiesSignature)
+      ? getResolvedTextStyle(textPropertiesSignature, textPropertiesPlacement)
+      : null;
+  const updateTextPlacementStyle = (updates: TextPlacementStyle) => {
+    if (
+      !textPropertiesPlacement ||
+      !textPropertiesSignature ||
+      !isTextSignature(textPropertiesSignature)
+    ) {
+      return;
+    }
+
+    setPlacements((current) =>
+      current.map((placement) => {
+        if (placement.id !== textPropertiesPlacement.id) {
+          return placement;
+        }
+
+        const nextPlacement = {
+          ...placement,
+          textStyle: {
+            ...placement.textStyle,
+            ...updates,
+          },
+        };
+        const pageSize = pageSizesRef.current[placement.pageIndex];
+
+        if (!pageSize) {
+          return nextPlacement;
+        }
+
+        const nextSize = getTextPlacementSize({
+          pageSize,
+          placement: nextPlacement,
+          signature: textPropertiesSignature,
+        });
+
+        return {
+          ...nextPlacement,
+          height: clamp(
+            nextSize.height,
+            editorOptions.minSignatureRatio,
+            1 - placement.y,
+          ),
+          width: clamp(
+            nextSize.width,
+            editorOptions.minSignatureRatio,
+            1 - placement.x,
+          ),
+        };
+      }),
+    );
+  };
 
   return (
     <main className="editor-shell">
@@ -1370,7 +2027,7 @@ export default function PdfSignatureEditor() {
         <div className="brand-block">
           <span className="brand-mark">PS</span>
           <div>
-            <h1>PDF Sign Tag</h1>
+            <h1>{editorOptions.title}</h1>
             <p>{documentName || "No document loaded"}</p>
           </div>
         </div>
@@ -1382,7 +2039,7 @@ export default function PdfSignatureEditor() {
               type="file"
               onChange={handleDocumentUpload}
             />
-            PDF / DOCX
+            {editorOptions.documentUploadLabel}
           </label>
           <div className="segmented-control" aria-label="Editor mode">
             <button
@@ -1456,31 +2113,54 @@ export default function PdfSignatureEditor() {
       <section className="editor-body">
         <aside className="signature-sidebar">
           <div className="panel-heading">
-            <h2>Signatures</h2>
+            <h2>{editorOptions.signaturesTitle}</h2>
             <span>{signatures.length}</span>
           </div>
 
           <div className="signature-list">
             {signatures.length === 0 ? (
-              <p className="empty-copy">Loading signatures.</p>
+              <p className="empty-copy">
+                {signatureOptions.length === 0
+                  ? editorOptions.emptySignaturesText
+                  : editorOptions.loadingSignaturesText}
+              </p>
             ) : (
               signatures.map((signature) => (
                 <button
                   className="signature-tile"
                   draggable={mode === "edit"}
+                  disabled={signature.disabled}
                   key={signature.id}
                   onDragStart={(event) => {
+                    if (signature.disabled) {
+                      event.preventDefault();
+                      return;
+                    }
+
                     event.dataTransfer.setData(
                       "application/pdf-sign-tag",
                       signature.id,
                     );
                     event.dataTransfer.effectAllowed = "copy";
-                    setSignatureDragImage({ event, signature });
+                    setSignatureDragImage({
+                      event,
+                      signature,
+                      signatureAspectRatio: editorOptions.signatureAspectRatio,
+                      signatureWidthPx: editorOptions.defaultSignatureWidthPx,
+                      zoom,
+                    });
                   }}
                   type="button"
+                  title={signature.description}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img alt={signature.name} src={signature.src} />
+                  {isImageSignature(signature) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img alt={signature.name} src={signature.src} />
+                  ) : (
+                    <strong className="signature-text-preview">
+                      {signature.value}
+                    </strong>
+                  )}
                   <span>{signature.name}</span>
                 </button>
               ))
@@ -1526,10 +2206,8 @@ export default function PdfSignatureEditor() {
 
           {!documentType ? (
             <div className="drop-empty-state">
-              <h2>Open a PDF or Word file to start placing signatures</h2>
-              <p>
-                Upload a PDF or DOCX, then drag a signature onto any page.
-              </p>
+              <h2>{editorOptions.emptyDocumentTitle}</h2>
+              <p>{editorOptions.emptyDocumentDescription}</p>
             </div>
           ) : documentType === "pdf" && pdfDocument ? (
             <div className="page-stack" onClick={() => setSelectedPlacementId(null)}>
@@ -1538,6 +2216,9 @@ export default function PdfSignatureEditor() {
                   key={index}
                   mode={mode}
                   onDrop={handlePageDrop}
+                  onPageBackgroundClick={clearCanvasSelection}
+                  onPageBackgroundContextMenu={openCanvasContextMenu}
+                  onPlacementContextMenu={openPlacementContextMenu}
                   onPageSize={updatePageSize}
                   pageIndex={index}
                   pdfDocument={pdfDocument}
@@ -1556,6 +2237,9 @@ export default function PdfSignatureEditor() {
               expectedPageSize={docxPageSize}
               mode={mode}
               onDrop={handleWordPageDrop}
+              onPageBackgroundClick={clearCanvasSelection}
+              onPageBackgroundContextMenu={openCanvasContextMenu}
+              onPlacementContextMenu={openPlacementContextMenu}
               onPageSize={updatePageSize}
               onRendered={handleWordRendered}
               placements={placements}
@@ -1573,6 +2257,220 @@ export default function PdfSignatureEditor() {
           )}
         </div>
       </section>
+      {contextMenu ? (
+        <div
+          className="tag-context-menu"
+          onClick={(event) => event.stopPropagation()}
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+        >
+          <button
+            disabled={!contextMenu.placementId}
+            onClick={() => handleContextMenuAction("cut")}
+            type="button"
+          >
+            <span aria-hidden="true">⌘</span>
+            Cut
+          </button>
+          <button
+            disabled={!contextMenu.placementId}
+            onClick={() => handleContextMenuAction("copy")}
+            type="button"
+          >
+            <span aria-hidden="true">□</span>
+            Copy
+          </button>
+          <button
+            disabled={!clipboardPlacement}
+            onClick={() => handleContextMenuAction("paste")}
+            type="button"
+          >
+            <span aria-hidden="true">▣</span>
+            Paste
+          </button>
+          <button
+            disabled={!contextMenu.placementId}
+            onClick={() => handleContextMenuAction("delete")}
+            type="button"
+          >
+            <span aria-hidden="true">⌫</span>
+            Delete
+          </button>
+          <button
+            disabled={!contextMenu.placementId}
+            onClick={() => handleContextMenuAction("properties")}
+            type="button"
+          >
+            <span aria-hidden="true">▤</span>
+            Properties
+          </button>
+        </div>
+      ) : null}
+      {textPropertiesModal && textPropertiesStyle ? (
+        <div className="properties-backdrop">
+          <section className="properties-dialog" role="dialog" aria-modal="true">
+            <header className="properties-header">
+              <h2>Textbox Properties</h2>
+              <button
+                aria-label="Close properties"
+                onClick={() => setTextPropertiesModal(null)}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+            <div className="properties-tabs">
+              <button
+                aria-pressed={textPropertiesModal.activeTab === "general"}
+                onClick={() =>
+                  setTextPropertiesModal({
+                    ...textPropertiesModal,
+                    activeTab: "general",
+                  })
+                }
+                type="button"
+              >
+                General
+              </button>
+              <button
+                aria-pressed={textPropertiesModal.activeTab === "appearance"}
+                onClick={() =>
+                  setTextPropertiesModal({
+                    ...textPropertiesModal,
+                    activeTab: "appearance",
+                  })
+                }
+                type="button"
+              >
+                Appearance
+              </button>
+            </div>
+            {textPropertiesModal.activeTab === "general" ? (
+              <div className="properties-grid">
+                <label>
+                  <span>Name</span>
+                  <input readOnly value={textPropertiesSignature?.name ?? ""} />
+                </label>
+                <label>
+                  <span>Tooltip</span>
+                  <input
+                    readOnly
+                    value={textPropertiesSignature?.description ?? ""}
+                  />
+                </label>
+                <label>
+                  <span>Value</span>
+                  <input
+                    onChange={(event) =>
+                      updateTextPlacementStyle({ value: event.target.value })
+                    }
+                    value={textPropertiesStyle.value}
+                  />
+                </label>
+                <label>
+                  <span>Form Field Visibility</span>
+                  <select defaultValue="visible">
+                    <option value="visible">visible</option>
+                  </select>
+                </label>
+              </div>
+            ) : (
+              <div className="properties-appearance">
+                <label>
+                  <span>Font</span>
+                  <select
+                    onChange={(event) =>
+                      updateTextPlacementStyle({
+                        fontFamily: event.target.value,
+                      })
+                    }
+                    value={textPropertiesStyle.fontFamily}
+                  >
+                    <option value="Arial">Arial</option>
+                    <option value="Helvetica">Helvetica</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Courier New">Courier New</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Size</span>
+                  <input
+                    min={8}
+                    onChange={(event) =>
+                      updateTextPlacementStyle({
+                        fontSize:
+                          Number.parseFloat(event.target.value) || undefined,
+                      })
+                    }
+                    type="number"
+                    value={Math.round(textPropertiesStyle.fontSize ?? 0) || ""}
+                  />
+                </label>
+                <div className="format-buttons">
+                  <button
+                    aria-pressed={textPropertiesStyle.fontWeight === "bold"}
+                    onClick={() =>
+                      updateTextPlacementStyle({
+                        fontWeight:
+                          textPropertiesStyle.fontWeight === "bold"
+                            ? "normal"
+                            : "bold",
+                      })
+                    }
+                    type="button"
+                  >
+                    B
+                  </button>
+                  <button
+                    aria-pressed={textPropertiesStyle.fontStyle === "italic"}
+                    onClick={() =>
+                      updateTextPlacementStyle({
+                        fontStyle:
+                          textPropertiesStyle.fontStyle === "italic"
+                            ? "normal"
+                            : "italic",
+                      })
+                    }
+                    type="button"
+                  >
+                    I
+                  </button>
+                  <button
+                    aria-pressed={
+                      textPropertiesStyle.textDecoration === "underline"
+                    }
+                    onClick={() =>
+                      updateTextPlacementStyle({
+                        textDecoration:
+                          textPropertiesStyle.textDecoration === "underline"
+                            ? "none"
+                            : "underline",
+                      })
+                    }
+                    type="button"
+                  >
+                    U
+                  </button>
+                </div>
+                <div className="align-buttons">
+                  {(["left", "center", "right"] as const).map((align) => (
+                    <button
+                      aria-pressed={textPropertiesStyle.align === align}
+                      key={align}
+                      onClick={() => updateTextPlacementStyle({ align })}
+                      type="button"
+                    >
+                      {align}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -1583,6 +2481,9 @@ function WordDocumentSurface({
   expectedPageSize,
   mode,
   onDrop,
+  onPageBackgroundClick,
+  onPageBackgroundContextMenu,
+  onPlacementContextMenu,
   onPageSize,
   onRendered,
   placements,
@@ -1597,6 +2498,12 @@ function WordDocumentSurface({
   expectedPageSize: PageSize | null;
   mode: EditorMode;
   onDrop: (event: React.DragEvent<HTMLDivElement>, pageIndex: number) => void;
+  onPageBackgroundClick: () => void;
+  onPageBackgroundContextMenu: (event: React.MouseEvent<HTMLElement>) => void;
+  onPlacementContextMenu: (
+    event: React.MouseEvent<HTMLElement>,
+    placement: Placement,
+  ) => void;
   onPageSize: (pageIndex: number, size: PageSize) => void;
   onRendered: (pageCount: number) => void;
   placements: Placement[];
@@ -1765,6 +2672,11 @@ function WordDocumentSurface({
                 rect.virtual ? " is-virtual" : ""
               }`}
               key={pageIndex}
+              onClick={(event) => {
+                event.stopPropagation();
+                onPageBackgroundClick();
+              }}
+              onContextMenu={onPageBackgroundContextMenu}
               onDragOver={(event) => {
                 if (mode === "edit") {
                   event.preventDefault();
@@ -1791,6 +2703,16 @@ function WordDocumentSurface({
                   }
 
                   const isSelected = selectedPlacementId === placement.id;
+                  const textStyle = isTextSignature(signature)
+                    ? getResolvedTextStyle(signature, placement)
+                    : null;
+                  const textMetrics = textStyle
+                    ? getTextTagMetrics({
+                        fontSize: textStyle.fontSize,
+                        scale: zoom,
+                        text: textStyle.value,
+                      })
+                    : null;
 
                   return (
                     <button
@@ -1799,6 +2721,9 @@ function WordDocumentSurface({
                       }`}
                       key={placement.id}
                       onClick={(event) => event.stopPropagation()}
+                      onContextMenu={(event) =>
+                        onPlacementContextMenu(event, placement)
+                      }
                       onPointerDown={(event) =>
                         startInteraction(event, placement, "move")
                       }
@@ -1807,11 +2732,29 @@ function WordDocumentSurface({
                         left: `${placement.x * 100}%`,
                         top: `${placement.y * 100}%`,
                         width: `${placement.width * 100}%`,
+                        ...(textMetrics
+                          ? {
+                              "--text-tag-font-size": `${textMetrics.fontSize}px`,
+                              "--text-tag-padding-x": `${textMetrics.horizontalPadding}px`,
+                              "--text-tag-font-family": textStyle?.fontFamily,
+                              "--text-tag-font-style": textStyle?.fontStyle,
+                              "--text-tag-font-weight": textStyle?.fontWeight,
+                              "--text-tag-text-align": textStyle?.align,
+                              "--text-tag-text-decoration":
+                                textStyle?.textDecoration,
+                            }
+                          : {}),
                       }}
                       type="button"
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img alt="" draggable={false} src={signature.src} />
+                      {isImageSignature(signature) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img alt="" draggable={false} src={signature.src} />
+                      ) : (
+                        <span className="placed-signature-text">
+                          {textStyle?.value ?? signature.value}
+                        </span>
+                      )}
                       {mode === "edit" && isSelected ? (
                         <span
                           aria-hidden="true"
@@ -1835,6 +2778,9 @@ function WordDocumentSurface({
 function PdfPageSurface({
   mode,
   onDrop,
+  onPageBackgroundClick,
+  onPageBackgroundContextMenu,
+  onPlacementContextMenu,
   onPageSize,
   pageIndex,
   pdfDocument,
@@ -1846,6 +2792,12 @@ function PdfPageSurface({
 }: {
   mode: EditorMode;
   onDrop: (event: React.DragEvent<HTMLDivElement>, pageIndex: number) => void;
+  onPageBackgroundClick: () => void;
+  onPageBackgroundContextMenu: (event: React.MouseEvent<HTMLElement>) => void;
+  onPlacementContextMenu: (
+    event: React.MouseEvent<HTMLElement>,
+    placement: Placement,
+  ) => void;
   onPageSize: (pageIndex: number, size: PageSize) => void;
   pageIndex: number;
   pdfDocument: PDFDocumentProxy;
@@ -1939,7 +2891,11 @@ function PdfPageSurface({
       <div className="page-label">Page {pageIndex + 1}</div>
       <div
         className="pdf-page-surface"
-        onClick={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onPageBackgroundClick();
+        }}
+        onContextMenu={onPageBackgroundContextMenu}
         onDragOver={(event) => {
           if (mode === "edit") {
             event.preventDefault();
@@ -1961,6 +2917,16 @@ function PdfPageSurface({
             }
 
             const isSelected = selectedPlacementId === placement.id;
+            const textStyle = isTextSignature(signature)
+              ? getResolvedTextStyle(signature, placement)
+              : null;
+            const textMetrics = textStyle
+              ? getTextTagMetrics({
+                  fontSize: textStyle.fontSize,
+                  scale: zoom,
+                  text: textStyle.value,
+                })
+              : null;
 
             return (
               <button
@@ -1969,6 +2935,9 @@ function PdfPageSurface({
                 onClick={(event) => {
                   event.stopPropagation();
                 }}
+                onContextMenu={(event) =>
+                  onPlacementContextMenu(event, placement)
+                }
                 onPointerDown={(event) =>
                   startInteraction(event, placement, "move")
                 }
@@ -1977,11 +2946,28 @@ function PdfPageSurface({
                   top: `${placement.y * 100}%`,
                   width: `${placement.width * 100}%`,
                   height: `${placement.height * 100}%`,
+                  ...(textMetrics
+                    ? {
+                        "--text-tag-font-size": `${textMetrics.fontSize}px`,
+                        "--text-tag-padding-x": `${textMetrics.horizontalPadding}px`,
+                        "--text-tag-font-family": textStyle?.fontFamily,
+                        "--text-tag-font-style": textStyle?.fontStyle,
+                        "--text-tag-font-weight": textStyle?.fontWeight,
+                        "--text-tag-text-align": textStyle?.align,
+                        "--text-tag-text-decoration": textStyle?.textDecoration,
+                      }
+                    : {}),
                 }}
                 type="button"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img alt="" draggable={false} src={signature.src} />
+                {isImageSignature(signature) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img alt="" draggable={false} src={signature.src} />
+                ) : (
+                  <span className="placed-signature-text">
+                    {textStyle?.value ?? signature.value}
+                  </span>
+                )}
                 {mode === "edit" && isSelected ? (
                   <span
                     aria-hidden="true"
