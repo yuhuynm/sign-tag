@@ -1,4 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PDF Sign Tag
+
+React editor for placing image/text signatures on PDF and DOCX files, then exporting the signed document.
+
+## Install as a package
+
+Build a local npm tarball:
+
+```bash
+npm pack
+```
+
+Install it in another project:
+
+```bash
+npm install /path/to/huynm-sign-tag-0.1.0.tgz
+```
+
+Use the component:
+
+```tsx
+import { PdfSignatureEditor, type SignatureOption } from "@huynm/sign-tag";
+import "@huynm/sign-tag/styles.css";
+
+const signatures: SignatureOption[] = [
+  {
+    id: "signature-a",
+    kind: "text",
+    name: "Signer name",
+    value: "Nguyen Van A",
+  },
+];
+
+export default function Page() {
+  return <PdfSignatureEditor signatures={signatures} />;
+}
+```
+
+To publish to a registry later:
+
+```bash
+npm publish
+```
 
 ## Getting Started
 
